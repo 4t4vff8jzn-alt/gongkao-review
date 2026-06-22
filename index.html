@@ -12621,10 +12621,14 @@
     function openReviewForm(id = "") {
       const form = $("#reviewForm");
       form.reset();
+      form.dataset.editingId = "";
+      form.elements.id.value = "";
       setReviewImage("");
       const item = state.reviews.find(x => x.id === id);
       $("#reviewDialogTitle").textContent = item ? "编辑复盘" : "新建复盘";
       if (item) {
+        form.dataset.editingId = item.id;
+        form.elements.id.value = item.id;
         Object.entries(item).forEach(([key, value]) => {
           const field = form.elements[key];
           if (field && key !== "tags") field.value = value || "";
@@ -12637,8 +12641,9 @@
         if (draft) {
           Object.entries(draft).forEach(([key, value]) => {
             const field = form.elements[key];
-            if (field && key !== "tags" && key !== "image") field.value = value || "";
+            if (field && key !== "id" && key !== "tags" && key !== "image") field.value = value || "";
           });
+          form.elements.id.value = "";
           updateSubmoduleSelect(draft.submodule || "");
           $$('input[name="tags"]', form).forEach(input => input.checked = (draft.tags || []).includes(input.value));
           setReviewImage(draft.image || "");
@@ -12673,11 +12678,13 @@
     function submitReview(event) {
       event.preventDefault();
       const data = formToReview(event.currentTarget);
+      const editingId = event.currentTarget.dataset.editingId || "";
+      data.id = editingId;
       if (!data.module || !data.title || !data.knowledge || !data.reason || ((SUBMODULES[data.module] || []).length && !data.submodule)) {
         showToast("请填写所有必填项。", true);
         return;
       }
-      const existing = state.reviews.find(x => x.id === data.id);
+      const existing = editingId ? state.reviews.find(x => x.id === editingId) : null;
       const stamp = nowISO();
       if (existing) Object.assign(existing, data, { updatedAt: stamp });
       else state.reviews.push({ ...data, id: uid(), createdAt: stamp, updatedAt: stamp });
@@ -12692,8 +12699,13 @@
     }
 
     function saveReviewDraft() {
-      if (!$("#reviewModal").classList.contains("open") || $("#reviewForm").elements.id.value) return;
-      try { localStorage.setItem(DRAFT_REVIEW_KEY, JSON.stringify(formToReview($("#reviewForm")))); } catch (error) { console.warn(error); }
+      const form = $("#reviewForm");
+      if (!$("#reviewModal").classList.contains("open") || form.dataset.editingId) return;
+      try {
+        const draft = formToReview(form);
+        delete draft.id;
+        localStorage.setItem(DRAFT_REVIEW_KEY, JSON.stringify(draft));
+      } catch (error) { console.warn(error); }
     }
 
     async function handleImageUpload(event) {
@@ -12818,14 +12830,21 @@
     function openIdiomForm(id = "") {
       const form = $("#idiomForm");
       form.reset();
+      form.dataset.editingId = "";
+      form.elements.id.value = "";
       const item = getAllIdioms().find(x => x.id === id);
       $("#idiomDialogTitle").textContent = item ? "编辑成语" : "新增成语";
       if (item) {
+        form.dataset.editingId = item.id;
+        form.elements.id.value = item.id;
         Object.entries(item).forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value || ""; });
       } else {
         const draft = safeJSON(localStorage.getItem(DRAFT_IDIOM_KEY), null);
         if (draft) {
-          Object.entries(draft).forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value || ""; });
+          Object.entries(draft).forEach(([key, value]) => {
+            if (key !== "id" && form.elements[key]) form.elements[key].value = value || "";
+          });
+          form.elements.id.value = "";
           showToast("已恢复上次未提交的成语草稿");
         }
       }
@@ -12848,11 +12867,13 @@
     function submitIdiom(event) {
       event.preventDefault();
       const data = formToIdiom(event.currentTarget);
+      const editingId = event.currentTarget.dataset.editingId || "";
+      data.id = editingId;
       if (!data.word || !data.meaning) return showToast("成语和释义为必填项。", true);
       const duplicate = getAllIdioms().find(x => x.word === data.word && x.id !== data.id);
       if (duplicate && !confirm(`“${data.word}”已存在，仍要继续保存吗？`)) return;
-      const existing = state.idioms.find(x => x.id === data.id);
-      const original = getAllIdioms().find(x => x.id === data.id);
+      const existing = editingId ? state.idioms.find(x => x.id === editingId) : null;
+      const original = editingId ? getAllIdioms().find(x => x.id === editingId) : null;
       const stamp = nowISO();
       if (existing) Object.assign(existing, data, { updatedAt: stamp });
       else if (original && original.source === "preset") {
@@ -12869,8 +12890,13 @@
     }
 
     function saveIdiomDraft() {
-      if (!$("#idiomModal").classList.contains("open") || $("#idiomForm").elements.id.value) return;
-      try { localStorage.setItem(DRAFT_IDIOM_KEY, JSON.stringify(formToIdiom($("#idiomForm")))); } catch (error) { console.warn(error); }
+      const form = $("#idiomForm");
+      if (!$("#idiomModal").classList.contains("open") || form.dataset.editingId) return;
+      try {
+        const draft = formToIdiom(form);
+        delete draft.id;
+        localStorage.setItem(DRAFT_IDIOM_KEY, JSON.stringify(draft));
+      } catch (error) { console.warn(error); }
     }
 
     function viewIdiom(id) {
