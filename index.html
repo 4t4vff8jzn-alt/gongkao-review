@@ -158,6 +158,23 @@
     .insight-item strong { display: block; margin-bottom: 6px; color: var(--green-2); }
     .insight-item p { margin: 0; color: #40504c; }
     .insight-priority { border-left: 4px solid var(--amber); }
+    .plan-summary { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+    .plan-card { border-left-color: var(--blue); }
+    .plan-progress { height: 10px; margin-top: 13px; overflow: hidden; border-radius: 3px; background: #e7eeec; }
+    .plan-progress > i { display: block; height: 100%; background: var(--green); }
+    .plan-task-list { display: grid; gap: 8px; margin-top: 14px; }
+    .plan-task {
+      display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 9px; align-items: center;
+      min-height: 48px; padding: 7px 9px; border-top: 1px solid var(--line);
+    }
+    .plan-task.done .task-title { color: var(--muted); text-decoration: line-through; }
+    .task-check { width: 24px; height: 24px; min-height: 24px; accent-color: var(--green); }
+    .task-title { font-weight: 700; overflow-wrap: anywhere; }
+    .task-meta { color: var(--muted); font-size: 12px; }
+    .priority-high { color: var(--red); }
+    .priority-medium { color: var(--amber); }
+    .priority-low { color: var(--green); }
+    .module-checks { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
     .result-section { margin-top: 22px; }
     .result-section h2 { font-size: 18px; }
     .idiom-name { color: var(--blue); }
@@ -252,7 +269,7 @@
         padding: 7px 5px calc(7px + env(safe-area-inset-bottom)); overflow: visible;
       }
       .brand { display: none; }
-      .nav { grid-template-columns: repeat(5, 1fr); gap: 2px; margin: 0; }
+      .nav { grid-template-columns: repeat(6, 1fr); gap: 2px; margin: 0; }
       .nav-btn { min-height: 55px; padding: 4px 2px; flex-direction: column; justify-content: center; gap: 1px; text-align: center; font-size: 11px; }
       .nav-icon { font-size: 17px; line-height: 1.1; }
       .main { padding: 18px 14px 32px; }
@@ -266,6 +283,8 @@
       .stat-card .value { font-size: 27px; }
       .dashboard-grid { grid-template-columns: 1fr; }
       .insight-grid { grid-template-columns: 1fr; }
+      .plan-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .module-checks { grid-template-columns: repeat(2,minmax(0,1fr)); }
       .panel { padding: 15px; }
       .reason-layout { grid-template-columns: 118px minmax(0,1fr); gap: 14px; }
       .donut { width: 118px; }
@@ -284,6 +303,7 @@
     @media (max-width: 480px) {
       html { font-size: 16px; }
       .stat-grid, .filter-grid, .search-all-grid { grid-template-columns: 1fr; }
+      .plan-summary, .module-checks { grid-template-columns: 1fr; }
       .filter-grid > :first-child, .search-all-grid > :first-child { grid-column: auto; }
       .reason-layout { grid-template-columns: 1fr; justify-items: center; }
       .legend { width: 100%; }
@@ -300,6 +320,7 @@
       <div class="brand"><strong>公考智能复盘</strong><span>把每次失分变成下一次得分</span></div>
       <nav class="nav">
         <button class="nav-btn" data-view="dashboard"><span class="nav-icon">▦</span><span>学习概览</span></button>
+        <button class="nav-btn" data-view="plans"><span class="nav-icon">✓</span><span>阶段计划</span></button>
         <button class="nav-btn" data-view="reviews"><span class="nav-icon">✎</span><span>复盘库</span></button>
         <button class="nav-btn" data-view="idioms"><span class="nav-icon">语</span><span>成语库</span></button>
         <button class="nav-btn" data-view="search"><span class="nav-icon">⌕</span><span>全库检索</span></button>
@@ -342,6 +363,24 @@
           <div class="panel-head"><h2>最近复盘</h2><button class="btn btn-text" data-view-jump="reviews">查看全部</button></div>
           <div class="record-list" id="recentReviews"></div>
         </section>
+      </section>
+
+      <section class="view" id="view-plans">
+        <header class="topbar">
+          <div><h1>阶段计划</h1><p>把阶段目标拆成可执行任务，按周期推进和复盘。</p></div>
+          <div class="toolbar"><button class="btn btn-primary" data-action="new-plan">＋ 新建阶段计划</button></div>
+        </header>
+        <div class="plan-summary" id="planSummary"></div>
+        <div class="filter-grid">
+          <input id="planSearch" type="search" placeholder="搜索计划、目标或任务">
+          <select id="planStatusFilter">
+            <option value="">全部状态</option>
+            <option value="active">进行中</option>
+            <option value="upcoming">未开始</option>
+            <option value="finished">已结束</option>
+          </select>
+        </div>
+        <div class="record-list" id="planList"></div>
       </section>
 
       <section class="view" id="view-reviews">
@@ -404,7 +443,7 @@
       </section>
 
       <section class="view" id="view-help">
-        <header class="topbar"><div><h1>使用说明</h1><p>这份系统完全离线，数据只保存在当前浏览器。</p></div></header>
+        <header class="topbar"><div><h1>使用说明</h1><p>登录后云端同步，未登录时保存在当前浏览器。</p></div></header>
         <article class="panel help" style="margin-top:0">
           <h2>快速开始</h2>
           <h3>电脑打开</h3>
@@ -415,7 +454,7 @@
           <h3>PDF 导出</h3>
           <ul><li>单条复盘：在复盘卡片点击“PDF”。</li><li>单模块：进入复盘库，选中顶部模块，再点击“导出当前模块”。</li><li>完整合集：在学习概览点击“导出全部 PDF”，将包含目录、六大模块及成语库。</li><li>手机导出后，文件通常进入“下载”或“文件”目录，可从系统分享菜单保存或转发。</li></ul>
           <h3>功能分区</h3>
-          <ul><li><b>学习概览：</b>记录总量、模块分布、错误原因占比和最近复盘。</li><li><b>复盘库：</b>录入、筛选、查看、编辑、删除与导出六大模块复盘。</li><li><b>成语库：</b>独立管理成语释义、辨析和真题陷阱。</li><li><b>全库检索：</b>跨复盘与成语库搜索，并按模块、标签、错误原因筛选。</li><li><b>草稿：</b>未提交的表单内容会自动留存在当前浏览器，重新打开表单可继续填写。</li></ul>
+          <ul><li><b>学习概览：</b>记录总量、模块分布、错误原因占比和最近复盘。</li><li><b>阶段计划：</b>设置周期目标、重点模块、阶段策略、任务清单和阶段复盘。</li><li><b>复盘库：</b>录入、筛选、查看、编辑、删除与导出六大模块复盘。</li><li><b>成语库：</b>独立管理成语释义、辨析和真题陷阱。</li><li><b>全库检索：</b>跨复盘与成语库搜索，并按模块、标签、错误原因筛选。</li><li><b>草稿：</b>未提交的表单内容会自动留存在当前浏览器，重新打开表单可继续填写。</li></ul>
           <h3>智能易错分析</h3>
           <p>学习概览会在本机统计高频错误模块、二级板块、错误原因和近 30 天学习节奏，并自动给出复习建议。此功能不联网，不会上传错题或个人数据。</p>
           <div class="notice">如需接入在线大模型进行更深入的逐题分析，需要网络和独立的安全接口。不要把个人 API 密钥直接写进可分享的 HTML 文件，否则密钥可能泄露。</div>
@@ -427,6 +466,43 @@
         </section>
       </section>
     </main>
+  </div>
+
+  <div class="modal" id="planModal" role="dialog" aria-modal="true" aria-labelledby="planDialogTitle">
+    <form class="dialog" id="planForm">
+      <div class="dialog-head"><h2 id="planDialogTitle">新建阶段计划</h2><button type="button" class="icon-btn" data-close="planModal" aria-label="关闭">×</button></div>
+      <div class="dialog-body">
+        <input type="hidden" name="id">
+        <div class="form-grid">
+          <div class="field full"><label class="required" for="pTitle">阶段名称</label><input id="pTitle" name="title" required maxlength="100" placeholder="如：行测基础强化阶段"></div>
+          <div class="field"><label class="required" for="pStartDate">开始日期</label><input id="pStartDate" name="startDate" type="date" required></div>
+          <div class="field"><label class="required" for="pEndDate">结束日期</label><input id="pEndDate" name="endDate" type="date" required></div>
+          <div class="field full"><label class="required" for="pGoal">阶段总目标</label><textarea id="pGoal" name="goal" required placeholder="写清阶段结束时希望达到的结果，例如正确率、做题量、知识覆盖范围"></textarea></div>
+          <div class="field full"><label>重点模块</label><div class="module-checks" id="planModuleOptions"></div></div>
+          <div class="field full"><label for="pStrategy">阶段策略</label><textarea id="pStrategy" name="strategy" placeholder="如：上午学理论，晚上做题；每周日集中复盘"></textarea></div>
+          <div class="field full"><label for="pReview">阶段复盘</label><textarea id="pReview" name="review" placeholder="阶段结束后记录完成情况、问题和下一阶段调整"></textarea></div>
+        </div>
+      </div>
+      <div class="dialog-foot"><button type="button" class="btn btn-secondary" data-close="planModal">取消</button><button type="submit" class="btn btn-primary">保存计划</button></div>
+    </form>
+  </div>
+
+  <div class="modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskDialogTitle">
+    <form class="dialog" id="taskForm" style="max-width:680px">
+      <div class="dialog-head"><h2 id="taskDialogTitle">新增计划任务</h2><button type="button" class="icon-btn" data-close="taskModal" aria-label="关闭">×</button></div>
+      <div class="dialog-body">
+        <input type="hidden" name="planId"><input type="hidden" name="taskId">
+        <div class="form-grid">
+          <div class="field full"><label class="required" for="tTitle">任务内容</label><input id="tTitle" name="title" required maxlength="120" placeholder="如：完成资料分析速算专题 100 题"></div>
+          <div class="field"><label for="tModule">所属模块</label><select id="tModule" name="module"></select></div>
+          <div class="field"><label for="tDueDate">截止日期</label><input id="tDueDate" name="dueDate" type="date"></div>
+          <div class="field"><label for="tPriority">优先级</label><select id="tPriority" name="priority"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option></select></div>
+          <div class="field"><label for="tHours">预计用时（小时）</label><input id="tHours" name="hours" type="number" min="0" max="999" step="0.5" placeholder="如：3"></div>
+          <div class="field full"><label for="tNote">任务备注</label><textarea id="tNote" name="note" placeholder="资料来源、完成标准或注意事项"></textarea></div>
+        </div>
+      </div>
+      <div class="dialog-foot"><button type="button" class="btn btn-secondary" data-close="taskModal">取消</button><button type="submit" class="btn btn-primary">保存任务</button></div>
+    </form>
   </div>
 
   <div class="modal" id="reviewModal" role="dialog" aria-modal="true" aria-labelledby="reviewDialogTitle">
@@ -12278,12 +12354,13 @@
     }
 
     function loadState() {
-      const base = { reviews: [], idioms: [], deletedPresetIds: [] };
+      const base = { reviews: [], idioms: [], plans: [], deletedPresetIds: [] };
       try {
         const saved = safeJSON(localStorage.getItem(STORE_KEY), base);
         return {
           reviews: Array.isArray(saved.reviews) ? saved.reviews : [],
           idioms: Array.isArray(saved.idioms) ? saved.idioms : [],
+          plans: Array.isArray(saved.plans) ? saved.plans : [],
           deletedPresetIds: Array.isArray(saved.deletedPresetIds) ? saved.deletedPresetIds : [],
           updatedAt: saved.updatedAt || "",
           cloudUserId: saved.cloudUserId || ""
@@ -12346,9 +12423,13 @@
       fillSelect($("#globalReason"), "全部错误原因", REASONS);
       const presetGroups = [...new Set(PRESET_IDIOMS.map(x => x.groupTitle).filter(Boolean))];
       fillSelect($("#idiomGroupFilter"), "全部原资料分组", presetGroups);
+      $("#planModuleOptions").innerHTML = MODULES.map((module, index) =>
+        `<label class="tag-check"><input type="checkbox" name="modules" value="${esc(module)}" id="plan_module_${index}"><span>${esc(module)}</span></label>`
+      ).join("");
+      fillSelect($("#tModule"), "不限定模块", MODULES);
       renderModuleTabs();
       bindEvents();
-      switchView(["dashboard", "reviews", "idioms", "search", "help"].includes(currentView) ? currentView : "dashboard");
+      switchView(["dashboard", "plans", "reviews", "idioms", "search", "help"].includes(currentView) ? currentView : "dashboard");
       renderAll();
     }
 
@@ -12359,6 +12440,7 @@
       $$(".nav-btn").forEach(el => el.classList.toggle("active", el.dataset.view === view));
       window.scrollTo({ top: 0, behavior: "smooth" });
       if (view === "dashboard") renderDashboard();
+      if (view === "plans") renderPlans();
       if (view === "reviews") renderReviews();
       if (view === "idioms") renderIdioms();
       if (view === "search") renderGlobalSearch();
@@ -12368,6 +12450,10 @@
       document.addEventListener("click", handleDocumentClick);
       $("#reviewForm").addEventListener("submit", submitReview);
       $("#idiomForm").addEventListener("submit", submitIdiom);
+      $("#planForm").addEventListener("submit", submitPlan);
+      $("#taskForm").addEventListener("submit", submitTask);
+      $("#planSearch").addEventListener("input", debounce(renderPlans));
+      $("#planStatusFilter").addEventListener("change", renderPlans);
       $("#rImage").addEventListener("change", handleImageUpload);
       $("#rModule").addEventListener("change", () => updateSubmoduleSelect());
       $("#removeReviewImage").addEventListener("click", () => setReviewImage(""));
@@ -12415,6 +12501,13 @@
       const actions = {
         "new-review": () => openReviewForm(),
         "new-idiom": () => openIdiomForm(),
+        "new-plan": () => openPlanForm(),
+        "edit-plan": () => openPlanForm(id),
+        "delete-plan": () => deletePlan(id),
+        "new-task": () => openTaskForm(action.dataset.planId),
+        "edit-task": () => openTaskForm(action.dataset.planId, action.dataset.taskId),
+        "delete-task": () => deleteTask(action.dataset.planId, action.dataset.taskId),
+        "toggle-task": () => toggleTask(action.dataset.planId, action.dataset.taskId),
         "view-review": () => viewReview(id),
         "edit-review": () => openReviewForm(id),
         "delete-review": () => deleteReview(id),
@@ -12462,6 +12555,7 @@
     // ---------- 仪表盘 ----------
     function renderAll() {
       renderDashboard();
+      if (currentView === "plans") renderPlans();
       if (currentView === "reviews") renderReviews();
       if (currentView === "idioms") renderIdioms();
       if (currentView === "search") renderGlobalSearch();
@@ -12478,6 +12572,7 @@
       $("#statCards").innerHTML = [
         ["累计复盘", total, "持续积累的错题资产"],
         ["今日新增", todayCount, "今天完成的复盘"],
+        ["进行中计划", (state.plans || []).filter(plan => getPlanStatus(plan) === "active").length, "阶段目标与任务同步推进"],
         ["成语收录", getAllIdioms().length, `原资料 ${PRESET_IDIOMS.length} 条，可继续新增`],
         ["当前薄弱模块", weakModule && total ? weakModule.module : "暂无数据", highReason && highReason.count ? `高频错误：${highReason.reason}` : "录入后自动分析"]
       ].map(([label,value,detail]) => `<div class="stat-card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div><div class="detail">${esc(detail)}</div></div>`).join("");
@@ -12540,6 +12635,130 @@
       const counts = {};
       values.forEach(value => { if (value) counts[value] = (counts[value] || 0) + 1; });
       return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count);
+    }
+
+    // ---------- 阶段计划 ----------
+    function renderPlans() {
+      const plans = Array.isArray(state.plans) ? state.plans : [];
+      const allTasks = plans.flatMap(plan => plan.tasks || []);
+      const doneTasks = allTasks.filter(task => task.done).length;
+      const activePlans = plans.filter(plan => getPlanStatus(plan) === "active").length;
+      const dueSoon = allTasks.filter(task => !task.done && task.dueDate && daysFromToday(task.dueDate) >= 0 && daysFromToday(task.dueDate) <= 3).length;
+      $("#planSummary").innerHTML = [
+        ["阶段计划", plans.length, "已创建的备考阶段"],
+        ["进行中", activePlans, "当前正在推进"],
+        ["任务完成", `${doneTasks}/${allTasks.length}`, allTasks.length ? `${Math.round(doneTasks / allTasks.length * 100)}% 完成率` : "尚未添加任务"],
+        ["近期截止", dueSoon, "未来 3 天待完成"]
+      ].map(([label, value, detail]) => `<div class="stat-card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div><div class="detail">${esc(detail)}</div></div>`).join("");
+      const keyword = $("#planSearch").value.trim().toLowerCase();
+      const status = $("#planStatusFilter").value;
+      const rows = plans.filter(plan => {
+        const searchText = [plan.title, plan.goal, plan.strategy, plan.review, ...(plan.modules || []), ...(plan.tasks || []).map(task => task.title)].join(" ").toLowerCase();
+        return (!keyword || searchText.includes(keyword)) && (!status || getPlanStatus(plan) === status);
+      }).sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
+      $("#planList").innerHTML = rows.length ? rows.map(planCard).join("") : emptyHTML("还没有符合条件的阶段计划。");
+    }
+
+    function planCard(plan) {
+      const tasks = plan.tasks || [];
+      const done = tasks.filter(task => task.done).length;
+      const percent = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+      const status = getPlanStatus(plan);
+      const statusText = { active: "进行中", upcoming: "未开始", finished: "已结束" }[status];
+      return `<article class="record plan-card">
+        <div class="record-top"><div><h3>${esc(plan.title)}</h3><div class="meta"><span class="chip">${esc(statusText)}</span><span>${esc(plan.startDate)} 至 ${esc(plan.endDate)}</span>${(plan.modules || []).map(x => `<span>${esc(x)}</span>`).join("")}</div></div>
+        <div class="record-actions"><button class="btn btn-text" data-action="new-task" data-plan-id="${esc(plan.id)}">加任务</button><button class="btn btn-text" data-action="edit-plan" data-id="${esc(plan.id)}">编辑</button><button class="btn btn-text" data-action="delete-plan" data-id="${esc(plan.id)}">删除</button></div></div>
+        <p class="record-summary"><b>阶段目标：</b>${esc(plan.goal)}</p>${plan.strategy ? `<p class="record-summary"><b>执行策略：</b>${esc(plan.strategy)}</p>` : ""}
+        <div class="plan-progress"><i style="width:${percent}%"></i></div><div class="meta"><span>任务 ${done}/${tasks.length}</span><span>完成率 ${percent}%</span></div>
+        <div class="plan-task-list">${tasks.length ? tasks.map(task => taskRow(plan.id, task)).join("") : `<div class="empty" style="padding:18px">还没有任务，点击“加任务”开始拆解目标。</div>`}</div>
+        ${plan.review ? `<p class="record-summary"><b>阶段复盘：</b>${esc(plan.review)}</p>` : ""}</article>`;
+    }
+
+    function taskRow(planId, task) {
+      const priorityText = { high: "高", medium: "中", low: "低" }[task.priority] || "中";
+      return `<div class="plan-task${task.done ? " done" : ""}">
+        <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} data-action="toggle-task" data-plan-id="${esc(planId)}" data-task-id="${esc(task.id)}" aria-label="完成任务">
+        <div><div class="task-title">${esc(task.title)}</div><div class="task-meta">${task.module ? `${esc(task.module)} · ` : ""}${task.dueDate ? `截止 ${esc(task.dueDate)} · ` : ""}<span class="priority-${esc(task.priority || "medium")}">${priorityText}优先级</span>${task.hours ? ` · ${esc(task.hours)}小时` : ""}</div></div>
+        <div class="record-actions"><button class="btn btn-text" data-action="edit-task" data-plan-id="${esc(planId)}" data-task-id="${esc(task.id)}">编辑</button><button class="btn btn-text" data-action="delete-task" data-plan-id="${esc(planId)}" data-task-id="${esc(task.id)}">删除</button></div></div>`;
+    }
+
+    function getPlanStatus(plan) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (plan.startDate && today < plan.startDate) return "upcoming";
+      if (plan.endDate && today > plan.endDate) return "finished";
+      return "active";
+    }
+
+    function daysFromToday(date) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      return Math.round((new Date(`${date}T00:00:00`) - today) / 86400000);
+    }
+
+    function openPlanForm(id = "") {
+      const form = $("#planForm"); form.reset(); form.dataset.editingId = ""; form.elements.id.value = "";
+      const plan = (state.plans || []).find(item => item.id === id);
+      $("#planDialogTitle").textContent = plan ? "编辑阶段计划" : "新建阶段计划";
+      if (plan) {
+        form.dataset.editingId = plan.id; form.elements.id.value = plan.id;
+        ["title", "startDate", "endDate", "goal", "strategy", "review"].forEach(key => form.elements[key].value = plan[key] || "");
+        $$('input[name="modules"]', form).forEach(input => input.checked = (plan.modules || []).includes(input.value));
+      } else {
+        const today = new Date(), end = new Date(today.getTime() + 27 * 86400000);
+        form.elements.startDate.value = today.toISOString().slice(0, 10); form.elements.endDate.value = end.toISOString().slice(0, 10);
+      }
+      openModal("planModal");
+    }
+
+    function submitPlan(event) {
+      event.preventDefault();
+      const form = event.currentTarget, fd = new FormData(form), editingId = form.dataset.editingId || "";
+      const data = { title: String(fd.get("title") || "").trim(), startDate: String(fd.get("startDate") || ""), endDate: String(fd.get("endDate") || ""), goal: String(fd.get("goal") || "").trim(), modules: fd.getAll("modules").map(String), strategy: String(fd.get("strategy") || "").trim(), review: String(fd.get("review") || "").trim() };
+      if (!data.title || !data.startDate || !data.endDate || !data.goal) return showToast("请填写阶段名称、日期和总目标。", true);
+      if (data.endDate < data.startDate) return showToast("结束日期不能早于开始日期。", true);
+      const existing = editingId ? (state.plans || []).find(item => item.id === editingId) : null, stamp = nowISO();
+      if (existing) Object.assign(existing, data, { updatedAt: stamp });
+      else { if (!Array.isArray(state.plans)) state.plans = []; state.plans.push({ ...data, id: uid(), tasks: [], createdAt: stamp, updatedAt: stamp }); }
+      if (!saveState()) return; closeModal("planModal"); renderPlans(); showToast(existing ? "阶段计划已更新" : "阶段计划已创建");
+    }
+
+    function deletePlan(id) {
+      const plan = (state.plans || []).find(item => item.id === id);
+      if (!plan || !confirm(`确定删除阶段计划“${plan.title}”及其任务吗？`)) return;
+      state.plans = state.plans.filter(item => item.id !== id); saveState(); renderPlans(); showToast("阶段计划已删除");
+    }
+
+    function openTaskForm(planId, taskId = "") {
+      const form = $("#taskForm"); form.reset(); form.elements.planId.value = planId; form.elements.taskId.value = taskId;
+      const plan = (state.plans || []).find(item => item.id === planId), task = plan?.tasks?.find(item => item.id === taskId);
+      $("#taskDialogTitle").textContent = task ? "编辑计划任务" : "新增计划任务";
+      if (task) ["title", "module", "dueDate", "priority", "hours", "note"].forEach(key => form.elements[key].value = task[key] || "");
+      else if (plan?.endDate) form.elements.dueDate.value = plan.endDate;
+      openModal("taskModal");
+    }
+
+    function submitTask(event) {
+      event.preventDefault();
+      const fd = new FormData(event.currentTarget), plan = (state.plans || []).find(item => item.id === fd.get("planId"));
+      if (!plan) return showToast("阶段计划不存在。", true);
+      const taskId = String(fd.get("taskId") || ""), data = { title: String(fd.get("title") || "").trim(), module: String(fd.get("module") || ""), dueDate: String(fd.get("dueDate") || ""), priority: String(fd.get("priority") || "medium"), hours: String(fd.get("hours") || ""), note: String(fd.get("note") || "").trim() };
+      if (!data.title) return showToast("请填写任务内容。", true);
+      if (!Array.isArray(plan.tasks)) plan.tasks = [];
+      const task = taskId ? plan.tasks.find(item => item.id === taskId) : null, stamp = nowISO();
+      if (task) Object.assign(task, data, { updatedAt: stamp }); else plan.tasks.push({ ...data, id: uid(), done: false, createdAt: stamp, updatedAt: stamp });
+      plan.updatedAt = stamp; if (!saveState()) return; closeModal("taskModal"); renderPlans(); showToast(task ? "任务已更新" : "任务已添加");
+    }
+
+    function toggleTask(planId, taskId) {
+      const plan = (state.plans || []).find(item => item.id === planId), task = plan?.tasks?.find(item => item.id === taskId);
+      if (!task) return;
+      task.done = !task.done; task.completedAt = task.done ? nowISO() : ""; task.updatedAt = nowISO(); plan.updatedAt = task.updatedAt;
+      saveState(); renderPlans();
+    }
+
+    function deleteTask(planId, taskId) {
+      const plan = (state.plans || []).find(item => item.id === planId), task = plan?.tasks?.find(item => item.id === taskId);
+      if (!task || !confirm(`确定删除任务“${task.title}”吗？`)) return;
+      plan.tasks = plan.tasks.filter(item => item.id !== taskId); plan.updatedAt = nowISO(); saveState(); renderPlans(); showToast("任务已删除");
     }
 
     // ---------- 复盘管理 ----------
@@ -13292,7 +13511,7 @@
     }
 
     function hasPersonalData(value) {
-      return Boolean(value?.reviews?.length || value?.idioms?.length || value?.deletedPresetIds?.length);
+      return Boolean(value?.reviews?.length || value?.idioms?.length || value?.plans?.length || value?.deletedPresetIds?.length);
     }
 
     function mergeAppStates(local, remote) {
@@ -13308,6 +13527,7 @@
       return {
         reviews: mergeRows(local.reviews, remote.reviews),
         idioms: mergeRows(local.idioms, remote.idioms),
+        plans: mergeRows(local.plans, remote.plans),
         deletedPresetIds: [...new Set([...(local.deletedPresetIds || []), ...(remote.deletedPresetIds || [])])],
         updatedAt: nowISO()
       };
@@ -13338,7 +13558,7 @@
     function clearAllData() {
       if (!confirm("确定清空全部复盘、成语和草稿吗？此操作不可撤销。")) return;
       if (!confirm("请再次确认：所有本地学习数据都将被删除。")) return;
-      state = { reviews: [], idioms: [], deletedPresetIds: [] };
+      state = { reviews: [], idioms: [], plans: [], deletedPresetIds: [] };
       [STORE_KEY, DRAFT_REVIEW_KEY, DRAFT_IDIOM_KEY, VIEW_KEY, MODULE_KEY].forEach(key => localStorage.removeItem(key));
       state.cloudUserId = cloudSession?.user?.id || "";
       state.updatedAt = nowISO();
