@@ -12320,6 +12320,7 @@
     let state = loadState();
     let cloudSession = safeJSON(localStorage.getItem(CLOUD_SESSION_KEY), null);
     let cloudSyncTimer = null;
+    let cloudPollTimer = null;
     let cloudSyncing = false;
     let currentView = localStorage.getItem(VIEW_KEY) || "dashboard";
     let currentModule = localStorage.getItem(MODULE_KEY) || "全部模块";
@@ -12440,7 +12441,10 @@
       $$(".nav-btn").forEach(el => el.classList.toggle("active", el.dataset.view === view));
       window.scrollTo({ top: 0, behavior: "smooth" });
       if (view === "dashboard") renderDashboard();
-      if (view === "plans") renderPlans();
+      if (view === "plans") {
+        renderPlans();
+        if (cloudSession) syncCloud(false);
+      }
       if (view === "reviews") renderReviews();
       if (view === "idioms") renderIdioms();
       if (view === "search") renderGlobalSearch();
@@ -12484,6 +12488,10 @@
       window.addEventListener("unhandledrejection", event => {
         console.error(event.reason);
         showToast("操作未完成，请重试。", true);
+      });
+      window.addEventListener("focus", () => { if (cloudSession) syncCloud(false); });
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && cloudSession) syncCloud(false);
       });
       initCloud();
     }
@@ -12613,9 +12621,9 @@
       const moduleRank = rankCounts(state.reviews.map(x => x.module));
       const submoduleRank = rankCounts(state.reviews.map(x => x.submodule).filter(Boolean));
       const reasonRank = rankCounts(state.reviews.map(x => x.reason));
-      const topModule = moduleRank[0];
+      const topModule = moduleRank[0] || { name: "暂无", count: 0 };
       const topSubmodule = submoduleRank[0];
-      const topReason = reasonRank[0];
+      const topReason = reasonRank[0] || { name: "暂无明确分类", count: 0 };
       const reasonAdvice = {
         "概念不清": "把相关概念整理成对比表，每次复习后用自己的话复述，并补一道同类题验证。",
         "审题失误": "训练圈画限定词、主体和设问方向，做完后用十秒检查是否答非所问。",
@@ -12820,6 +12828,7 @@
 
     function reviewCard(item) {
       const tags = (item.tags || []).map(x => `<span class="chip">${esc(x)}</span>`).join("");
+      const knowledge = String(item.knowledge || "");
       return `<article class="record">
         <div class="record-top">
           <div>
@@ -12833,7 +12842,7 @@
             <button class="btn btn-text" data-action="delete-review" data-id="${esc(item.id)}">删除</button>
           </div>
         </div>
-        <p class="record-summary">${esc(item.knowledge).slice(0, 180)}${item.knowledge.length > 180 ? "…" : ""}</p>
+        <p class="record-summary">${esc(knowledge).slice(0, 180)}${knowledge.length > 180 ? "…" : ""}</p>
       </article>`;
     }
 
@@ -13364,6 +13373,7 @@
       try {
         await ensureCloudSession();
         await syncCloud(false);
+        startCloudAutoSync();
       } catch (error) {
         console.error(error);
         updateCloudUI("error", "云端连接失败，本地数据仍可使用");
@@ -13381,6 +13391,7 @@
           setCloudSession(result);
           closeModal("authModal");
           await syncCloud(false);
+          startCloudAutoSync();
           showToast("注册成功，已开启跨设备同步");
         } else {
           showToast("注册成功，请到邮箱确认后再登录。");
@@ -13400,6 +13411,7 @@
         setCloudSession(result);
         closeModal("authModal");
         await syncCloud(false);
+        startCloudAutoSync();
         showToast("登录成功，跨设备同步已开启");
       } catch (error) {
         showToast(formatCloudError(error), true);
@@ -13441,6 +13453,14 @@
       cloudSyncTimer = setTimeout(() => syncCloud(true), 900);
     }
 
+    function startCloudAutoSync() {
+      clearInterval(cloudPollTimer);
+      if (!cloudSession) return;
+      cloudPollTimer = setInterval(() => {
+        if (!document.hidden && cloudSession) syncCloud(false);
+      }, 15000);
+    }
+
     async function cloudFetch(path, options = {}) {
       await ensureCloudSession();
       const response = await fetch(`${SUPABASE_URL}${path}`, {
@@ -13476,6 +13496,13 @@
             body: JSON.stringify({ user_id: userId, payload: state, updated_at: nowISO() })
           });
         } else if (forcePush) {
+          const remoteUpdated = new Date(rows[0].updated_at || 0);
+          const localUpdated = new Date(state.updatedAt || 0);
+          if (remoteUpdated > localUpdated) {
+            state = mergeAppStates(state, rows[0].payload || {});
+            localStorage.setItem(STORE_KEY, JSON.stringify(state));
+            renderAll();
+          }
           state.cloudUserId = userId;
           state.updatedAt = nowISO();
           await pushCloudState(userId);
@@ -13539,6 +13566,8 @@
         if (cloudSession) await cloudFetch("/auth/v1/logout", { method: "POST" });
       } catch (error) { console.warn(error); }
       cloudSession = null;
+      clearInterval(cloudPollTimer);
+      cloudPollTimer = null;
       localStorage.removeItem(CLOUD_SESSION_KEY);
       closeModal("accountModal");
       updateCloudUI("", "未登录：数据仅保存在当前设备");
