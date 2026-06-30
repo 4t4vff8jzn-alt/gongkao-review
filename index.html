@@ -12356,7 +12356,7 @@
     }
 
     function loadState() {
-      const base = { reviews: [], idioms: [], plans: [], deletedPresetIds: [] };
+      const base = { reviews: [], idioms: [], plans: [], deletedPresetIds: [], deletedReviewIds: [] };
       try {
         const saved = safeJSON(localStorage.getItem(STORE_KEY), base);
         return {
@@ -12364,6 +12364,7 @@
           idioms: Array.isArray(saved.idioms) ? saved.idioms : [],
           plans: Array.isArray(saved.plans) ? saved.plans : [],
           deletedPresetIds: Array.isArray(saved.deletedPresetIds) ? saved.deletedPresetIds : [],
+          deletedReviewIds: Array.isArray(saved.deletedReviewIds) ? saved.deletedReviewIds : [],
           updatedAt: saved.updatedAt || "",
           cloudUserId: saved.cloudUserId || ""
         };
@@ -13075,6 +13076,7 @@
     function deleteReview(id) {
       const item = state.reviews.find(x => x.id === id);
       if (!item || !confirm(`确定删除复盘“${item.title}”吗？此操作不可撤销。`)) return;
+      state.deletedReviewIds = [...new Set([...(state.deletedReviewIds || []), id])];
       state.reviews = state.reviews.filter(x => x.id !== id);
       saveState(); renderAll(); showToast("复盘已删除");
     }
@@ -13565,13 +13567,9 @@
             body: JSON.stringify({ user_id: userId, payload: state, updated_at: nowISO() })
           });
         } else if (forcePush) {
-          const remoteUpdated = new Date(rows[0].updated_at || 0);
-          const localUpdated = new Date(state.updatedAt || 0);
-          if (remoteUpdated > localUpdated) {
-            state = mergeAppStates(state, rows[0].payload || {});
-            localStorage.setItem(STORE_KEY, JSON.stringify(state));
-            renderAll();
-          }
+          state = mergeAppStates(state, rows[0].payload || {});
+          localStorage.setItem(STORE_KEY, JSON.stringify(state));
+          renderAll();
           state.cloudUserId = userId;
           state.updatedAt = nowISO();
           await pushCloudState(userId);
@@ -13607,24 +13605,27 @@
     }
 
     function hasPersonalData(value) {
-      return Boolean(value?.reviews?.length || value?.idioms?.length || value?.plans?.length || value?.deletedPresetIds?.length);
+      return Boolean(value?.reviews?.length || value?.idioms?.length || value?.plans?.length || value?.deletedPresetIds?.length || value?.deletedReviewIds?.length);
     }
 
     function mergeAppStates(local, remote) {
-      const mergeRows = (a = [], b = []) => {
+      const deletedReviewIds = new Set([...(local.deletedReviewIds || []), ...(remote.deletedReviewIds || [])]);
+      const mergeRows = (a = [], b = [], deletedIds = new Set()) => {
         const map = new Map();
         [...a, ...b].forEach(item => {
           if (!item?.id) return;
+          if (deletedIds.has(item.id)) return;
           const current = map.get(item.id);
           if (!current || new Date(item.updatedAt || 0) >= new Date(current.updatedAt || 0)) map.set(item.id, item);
         });
         return [...map.values()];
       };
       return {
-        reviews: mergeRows(local.reviews, remote.reviews),
+        reviews: mergeRows(local.reviews, remote.reviews, deletedReviewIds),
         idioms: mergeRows(local.idioms, remote.idioms),
         plans: mergeRows(local.plans, remote.plans),
         deletedPresetIds: [...new Set([...(local.deletedPresetIds || []), ...(remote.deletedPresetIds || [])])],
+        deletedReviewIds: [...deletedReviewIds],
         updatedAt: nowISO()
       };
     }
@@ -13656,7 +13657,7 @@
     function clearAllData() {
       if (!confirm("确定清空全部复盘、成语和草稿吗？此操作不可撤销。")) return;
       if (!confirm("请再次确认：所有本地学习数据都将被删除。")) return;
-      state = { reviews: [], idioms: [], plans: [], deletedPresetIds: [] };
+      state = { reviews: [], idioms: [], plans: [], deletedPresetIds: [], deletedReviewIds: [] };
       [STORE_KEY, DRAFT_REVIEW_KEY, DRAFT_IDIOM_KEY, VIEW_KEY, MODULE_KEY].forEach(key => localStorage.removeItem(key));
       state.cloudUserId = cloudSession?.user?.id || "";
       state.updatedAt = nowISO();
