@@ -12316,8 +12316,6 @@
     const CLOUD_SESSION_KEY = "gk_cloud_session_v1";
     const SUPABASE_URL = "https://gdwxqbiqfkevwgrfjomq.supabase.co";
     const SUPABASE_KEY = "sb_publishable_CDA8qJVgliF7gd8j14IUGQ_TYgA5mIl";
-    const DEFAULT_SYNC_EMAIL = "gongkao-sync@review.local";
-    const DEFAULT_SYNC_PASSWORD = "Gongkao#Sync2026";
     const IMAGE_BUCKET = "review-images";
 
     let state = loadState();
@@ -12327,6 +12325,8 @@
     let cloudSyncing = false;
     let cloudSyncQueued = false;
     let cloudLastErrorAt = 0;
+    let cloudLastSyncAt = 0;
+    let cloudRetryDelay = 15000;
     let currentView = localStorage.getItem(VIEW_KEY) || "dashboard";
     let currentModule = localStorage.getItem(MODULE_KEY) || "全部模块";
     let toastTimer = null;
@@ -13125,7 +13125,20 @@
         data: dataUrl,
         createdAt: nowISO()
       };
-      saveState();
+      // 图片正文必须先得到云端确认，避免只留下 cloud-image 编号却没有实际图片。
+      state.updatedAt = nowISO();
+      await ensureCloudSession();
+      try {
+        const deadline = Date.now() + 15000;
+        while (cloudSyncing && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (cloudSyncing || !(await syncCloud(true))) throw new Error("图片尚未写入云端");
+      } catch (error) {
+        delete state.cloudImages[imageId];
+        throw error;
+      }
+      safePersistState(state);
       return `cloud-image:${imageId}`;
     }
 
@@ -13539,15 +13552,7 @@
 
     async function initCloud() {
       if (!cloudSession?.access_token) {
-        updateCloudUI("syncing", "正在连接云端同步账号…");
-        try {
-          await signInDefaultCloud();
-          await syncCloud(false);
-          startCloudAutoSync();
-        } catch (error) {
-          console.error(error);
-          updateCloudUI("error", "云端连接失败，本地数据仍可使用");
-        }
+        updateCloudUI("", "未登录：请登录同一账号进行跨设备同步");
         return;
       }
       updateCloudUI("syncing", "正在连接云端…");
@@ -13620,27 +13625,20 @@
       safeLocalSet(CLOUD_SESSION_KEY, JSON.stringify(cloudSession));
     }
 
-    async function signInDefaultCloud() {
-      const result = await authRequest("/auth/v1/token?grant_type=password", {
-        email: DEFAULT_SYNC_EMAIL,
-        password: DEFAULT_SYNC_PASSWORD
-      });
-      setCloudSession(result);
-      return result;
-    }
-
     async function ensureCloudSession() {
       if (!cloudSession) {
-        await signInDefaultCloud();
-        return;
+        throw new Error("请先登录云端同步账号");
       }
       if ((cloudSession.expires_at || 0) > Math.floor(Date.now() / 1000) + 60) return;
       try {
         const refreshed = await authRequest("/auth/v1/token?grant_type=refresh_token", { refresh_token: cloudSession.refresh_token });
         setCloudSession(refreshed);
       } catch (error) {
-        console.warn("刷新云端登录已失效，改用同步账号重新登录", error);
-        await signInDefaultCloud();
+        console.warn("云端登录已失效，需要重新登录", error);
+        cloudSession = null;
+        safeLocalRemove(CLOUD_SESSION_KEY);
+        updateCloudUI("error", "登录已过期：请重新登录同步账号");
+        throw new Error("登录已过期，请重新登录");
       }
     }
 
@@ -13660,29 +13658,40 @@
       if (!cloudSession) return;
       cloudPollTimer = setInterval(() => {
         if (!document.hidden && cloudSession) syncCloud(false);
-      }, 5000);
+      }, 60000);
     }
 
     function retryCloudSyncLater() {
       if (!cloudSession || document.hidden) return;
       clearTimeout(cloudSyncTimer);
-      cloudSyncTimer = setTimeout(() => syncCloud(false), 4000);
+      const delay = cloudRetryDelay;
+      cloudRetryDelay = Math.min(cloudRetryDelay * 2, 300000);
+      cloudSyncTimer = setTimeout(() => syncCloud(false), delay);
     }
 
     async function cloudFetch(path, options = {}, hasRetried = false) {
       await ensureCloudSession();
-      const response = await fetch(`${SUPABASE_URL}${path}`, {
-        ...options,
-        headers: {
-          "apikey": SUPABASE_KEY,
-          "Authorization": `Bearer ${cloudSession.access_token}`,
-          "Content-Type": "application/json",
-          ...(options.headers || {})
-        }
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      let response;
+      try {
+        response = await fetch(`${SUPABASE_URL}${path}`, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${cloudSession.access_token}`,
+            "Content-Type": "application/json",
+            ...(options.headers || {})
+          }
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if ((response.status === 401 || response.status === 403) && !hasRetried) {
-        console.warn("云端授权失效，重新登录后重试");
-        await signInDefaultCloud();
+        console.warn("云端授权失效，刷新登录后重试");
+        cloudSession.expires_at = 0;
+        await ensureCloudSession();
         return cloudFetch(path, options, true);
       }
       if (!response.ok) {
@@ -13694,10 +13703,11 @@
     }
 
     async function syncCloud(forcePush = true) {
-      if (!cloudSession) return;
+      if (!cloudSession) return false;
+      if (!forcePush && Date.now() - cloudLastSyncAt < 15000) return true;
       if (cloudSyncing) {
         if (forcePush) cloudSyncQueued = true;
-        return;
+        return false;
       }
       cloudSyncing = true;
       cloudSyncQueued = false;
@@ -13713,37 +13723,31 @@
             headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
             body: JSON.stringify({ user_id: userId, payload: state, updated_at: nowISO() })
           });
-        } else if (forcePush) {
-          state = mergeAppStates(state, rows[0].payload || {});
-          safePersistState(state);
-          renderAll();
-          state.cloudUserId = userId;
-          state.updatedAt = nowISO();
-          await pushCloudState(userId);
-        } else if (state.cloudUserId !== userId && hasPersonalData(state)) {
-          state = mergeAppStates(state, rows[0].payload || {});
-          state.cloudUserId = userId;
-          state.updatedAt = nowISO();
-          safePersistState(state);
-          await pushCloudState(userId);
-          renderAll();
-        } else if (new Date(rows[0].updated_at || 0) > new Date(state.updatedAt || 0)) {
+        } else {
           const remotePayload = rows[0].payload || {};
           const mergedState = mergeAppStates(state, remotePayload);
-          const shouldPushMerged = JSON.stringify(mergedState.reviews || []) !== JSON.stringify(remotePayload.reviews || [])
+          // 本地缓存会主动移除图片正文，因此任何写入前都必须先合并远端完整状态。
+          // 禁止依据时间戳直接用本地 state 覆盖云端，否则空 cloudImages 会造成图片永久丢失。
+          const shouldPushMerged = forcePush
+            || JSON.stringify(mergedState.reviews || []) !== JSON.stringify(remotePayload.reviews || [])
             || JSON.stringify(mergedState.idioms || []) !== JSON.stringify(remotePayload.idioms || [])
             || JSON.stringify(mergedState.plans || []) !== JSON.stringify(remotePayload.plans || [])
-            || JSON.stringify(mergedState.cloudImages || {}) !== JSON.stringify(remotePayload.cloudImages || {});
+            || JSON.stringify(mergedState.cloudImages || {}) !== JSON.stringify(remotePayload.cloudImages || {})
+            || JSON.stringify(mergedState.deletedPresetIds || []) !== JSON.stringify(remotePayload.deletedPresetIds || [])
+            || JSON.stringify(mergedState.deletedReviewIds || []) !== JSON.stringify(remotePayload.deletedReviewIds || []);
           state = { ...mergedState, cloudUserId: userId };
+          if (shouldPushMerged) {
+            state.updatedAt = nowISO();
+            await pushCloudState(userId);
+          }
           safePersistState(state);
-          if (shouldPushMerged) await pushCloudState(userId);
           renderAll();
-        } else {
-          state.cloudUserId = userId;
-          await pushCloudState(userId);
         }
         updateCloudUI("online", `已同步：${cloudSession.user.email}`);
         cloudLastErrorAt = 0;
+        cloudLastSyncAt = Date.now();
+        cloudRetryDelay = 15000;
+        return true;
       } catch (error) {
         console.error(error);
         updateCloudUI("error", "同步失败，本地数据已保留");
@@ -13753,6 +13757,7 @@
           cloudLastErrorAt = now;
         }
         retryCloudSyncLater();
+        return false;
       } finally {
         cloudSyncing = false;
         if (cloudSyncQueued) {
@@ -13793,7 +13798,9 @@
         cloudImages: { ...(remote.cloudImages || {}), ...(local.cloudImages || {}) },
         deletedPresetIds: [...new Set([...(local.deletedPresetIds || []), ...(remote.deletedPresetIds || [])])],
         deletedReviewIds: [...deletedReviewIds],
-        updatedAt: nowISO()
+        updatedAt: String(local.updatedAt || "") > String(remote.updatedAt || "")
+          ? local.updatedAt
+          : (remote.updatedAt || local.updatedAt || "")
       };
     }
 
