@@ -12374,7 +12374,7 @@
     }
 
     function loadState() {
-      const base = { reviews: [], idioms: [], plans: [], cloudImages: {}, deletedPresetIds: [], deletedReviewIds: [] };
+      const base = { reviews: [], idioms: [], plans: [], cloudImages: {}, imageUrls: {}, deletedPresetIds: [], deletedReviewIds: [] };
       try {
         const saved = safeJSON(localStorage.getItem(STORE_KEY), base);
         return {
@@ -12382,6 +12382,7 @@
           idioms: Array.isArray(saved.idioms) ? saved.idioms : [],
           plans: Array.isArray(saved.plans) ? saved.plans : [],
           cloudImages: saved.cloudImages && typeof saved.cloudImages === "object" ? saved.cloudImages : {},
+          imageUrls: saved.imageUrls && typeof saved.imageUrls === "object" ? saved.imageUrls : {},
           deletedPresetIds: Array.isArray(saved.deletedPresetIds) ? saved.deletedPresetIds : [],
           deletedReviewIds: Array.isArray(saved.deletedReviewIds) ? saved.deletedReviewIds : [],
           updatedAt: saved.updatedAt || "",
@@ -12402,7 +12403,8 @@
         })),
         idioms: value.idioms || [],
         plans: value.plans || [],
-        cloudImages: {}
+        cloudImages: {},
+        imageUrls: value.imageUrls && typeof value.imageUrls === "object" ? value.imageUrls : {}
       };
     }
 
@@ -13098,9 +13100,8 @@
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
         const message = result.message || result.error || `IMAGE_UPLOAD_${response.status}`;
-        if (/bucket|not found|row-level security|not authorized|unauthorized|403|404/i.test(message)) {
-          return saveImageInCloudState(blob, originalName);
-        }
+        // 不再退回到 app_state 的整包 JSON 存图。整包覆盖正是历史图片丢失的根因；
+        // 文件存储不可用时宁可明确报错，也不能留下日后会失效的 cloud-image 引用。
         throw new Error(message);
       }
       return `${SUPABASE_URL}/storage/v1/object/public/${IMAGE_BUCKET}/${path}`;
@@ -13163,7 +13164,7 @@
       const src = String(value || "");
       if (src.startsWith("cloud-image:")) {
         const imageId = src.slice("cloud-image:".length);
-        return state.cloudImages?.[imageId]?.data || "";
+        return state.imageUrls?.[imageId] || state.cloudImages?.[imageId]?.data || "";
       }
       return src;
     }
@@ -13796,6 +13797,7 @@
         idioms: mergeRows(local.idioms, remote.idioms),
         plans: mergeRows(local.plans, remote.plans),
         cloudImages: { ...(remote.cloudImages || {}), ...(local.cloudImages || {}) },
+        imageUrls: { ...(remote.imageUrls || {}), ...(local.imageUrls || {}) },
         deletedPresetIds: [...new Set([...(local.deletedPresetIds || []), ...(remote.deletedPresetIds || [])])],
         deletedReviewIds: [...deletedReviewIds],
         updatedAt: String(local.updatedAt || "") > String(remote.updatedAt || "")
